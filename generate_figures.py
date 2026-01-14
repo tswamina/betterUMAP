@@ -1,5 +1,6 @@
 """
 Generate comparison figures for HiDRA vs other dimensionality reduction methods.
+Includes UMAP for complete comparison.
 """
 
 import numpy as np
@@ -7,10 +8,12 @@ import matplotlib.pyplot as plt
 from sklearn.datasets import make_swiss_roll, make_blobs, make_s_curve
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
+import umap
 import warnings
 warnings.filterwarnings('ignore')
 
-from hidra import HiDRA, knn_recall, spearman_correlation, distortion_ratio
+from hidra import HiDRA
+from hidra.metrics import knn_recall, spearman_correlation, distortion_ratio
 
 # Set style
 plt.style.use('seaborn-v0_8-whitegrid')
@@ -21,16 +24,17 @@ def run_methods(X, random_state=42):
     results = {}
 
     # PCA
-    pca = PCA(n_components=2, random_state=random_state)
-    results['PCA'] = pca.fit_transform(X)
+    results['PCA'] = PCA(n_components=2, random_state=random_state).fit_transform(X)
 
     # t-SNE
-    tsne = TSNE(n_components=2, random_state=random_state, perplexity=30)
-    results['t-SNE'] = tsne.fit_transform(X)
+    results['t-SNE'] = TSNE(n_components=2, random_state=random_state, perplexity=30).fit_transform(X)
 
-    # HiDRA
-    hidra = HiDRA(n_components=2, random_state=random_state)
-    results['HiDRA'] = hidra.fit_transform(X)
+    # UMAP
+    results['UMAP'] = umap.UMAP(n_components=2, random_state=random_state).fit_transform(X)
+
+    # HiDRA with balanced settings
+    results['HiDRA'] = HiDRA(n_components=2, n_iter=1000, distance_weight=0.15,
+                             random_state=random_state).fit_transform(X)
 
     return results
 
@@ -50,27 +54,21 @@ def compute_metrics(X, embeddings):
 def plot_comparison(X, y, embeddings, metrics, title, filename):
     """Create comparison figure."""
     n_methods = len(embeddings)
-    fig, axes = plt.subplots(1, n_methods, figsize=(5 * n_methods, 5))
+    fig, axes = plt.subplots(1, n_methods, figsize=(4.5 * n_methods, 4.5))
 
     if n_methods == 1:
         axes = [axes]
 
-    colors = plt.cm.viridis(y / y.max()) if y.max() > 0 else plt.cm.viridis(np.zeros_like(y))
-
     for ax, (name, Y) in zip(axes, embeddings.items()):
-        ax.scatter(Y[:, 0], Y[:, 1], c=y, cmap='viridis', s=8, alpha=0.7)
+        ax.scatter(Y[:, 0], Y[:, 1], c=y, cmap='viridis', s=6, alpha=0.7)
 
         m = metrics[name]
-        subtitle = f"kNN: {m['kNN Recall']:.3f} | ρ: {m['Spearman ρ']:.3f} | dist: {m['Distortion']:.1f}"
+        subtitle = f"kNN: {m['kNN Recall']:.3f} | ρ: {m['Spearman ρ']:.3f}"
         ax.set_title(f"{name}\n{subtitle}", fontsize=11)
         ax.set_xticks([])
         ax.set_yticks([])
 
-        # Add border color based on best metric
-        for spine in ax.spines.values():
-            spine.set_linewidth(2)
-
-    plt.suptitle(title, fontsize=14, fontweight='bold', y=1.02)
+    plt.suptitle(title, fontsize=13, fontweight='bold', y=1.02)
     plt.tight_layout()
     plt.savefig(filename, dpi=150, bbox_inches='tight', facecolor='white')
     plt.close()
@@ -79,14 +77,12 @@ def plot_comparison(X, y, embeddings, metrics, title, filename):
 
 def create_metrics_table(all_metrics):
     """Create a summary metrics table figure."""
-    fig, ax = plt.subplots(figsize=(12, 6))
+    fig, ax = plt.subplots(figsize=(14, 8))
     ax.axis('off')
 
-    # Prepare data for table
     datasets = list(all_metrics.keys())
-    methods = ['PCA', 't-SNE', 'HiDRA']
+    methods = ['PCA', 't-SNE', 'UMAP', 'HiDRA']
 
-    # Create table data
     cell_text = []
     for dataset in datasets:
         for method in methods:
@@ -107,41 +103,41 @@ def create_metrics_table(all_metrics):
         colLabels=col_labels,
         cellLoc='center',
         loc='center',
-        colWidths=[0.25, 0.15, 0.15, 0.15, 0.15]
+        colWidths=[0.22, 0.12, 0.15, 0.15, 0.15]
     )
 
     table.auto_set_font_size(False)
     table.set_fontsize(10)
-    table.scale(1.2, 1.8)
+    table.scale(1.2, 1.6)
 
     # Style header
-    for j, label in enumerate(col_labels):
+    for j in range(len(col_labels)):
         table[(0, j)].set_facecolor('#4472C4')
         table[(0, j)].set_text_props(color='white', fontweight='bold')
 
     # Highlight best results
     for i, dataset in enumerate(datasets):
-        base_row = i * 3 + 1
+        base_row = i * 4 + 1
 
-        # Find best for each metric
         knn_values = [all_metrics[dataset][m]['kNN Recall'] for m in methods]
         rho_values = [all_metrics[dataset][m]['Spearman ρ'] for m in methods]
         dist_values = [all_metrics[dataset][m]['Distortion'] for m in methods]
 
-        best_knn = methods[np.argmax(knn_values)]
-        best_rho = methods[np.argmax(rho_values)]
-        best_dist = methods[np.argmin(dist_values)]
+        best_knn_idx = np.argmax(knn_values)
+        best_rho_idx = np.argmax(rho_values)
+        best_dist_idx = np.argmin(dist_values)
 
-        for j, method in enumerate(methods):
+        for j in range(len(methods)):
             row = base_row + j
-            if method == best_knn:
+            if j == best_knn_idx:
                 table[(row, 2)].set_facecolor('#C6EFCE')
-            if method == best_rho:
+            if j == best_rho_idx:
                 table[(row, 3)].set_facecolor('#C6EFCE')
-            if method == best_dist:
+            if j == best_dist_idx:
                 table[(row, 4)].set_facecolor('#C6EFCE')
 
-    plt.title('Benchmark Results Summary\n(Green = Best)', fontsize=14, fontweight='bold', pad=20)
+    plt.title('HiDRA Benchmark Results\n(Green = Best in category)',
+              fontsize=14, fontweight='bold', pad=20)
     plt.savefig('benchmark_summary.png', dpi=150, bbox_inches='tight', facecolor='white')
     plt.close()
     print("Saved: benchmark_summary.png")
@@ -151,58 +147,53 @@ if __name__ == "__main__":
     np.random.seed(42)
     all_metrics = {}
 
-    # Dataset 1: Swiss Roll (manifold)
+    # Dataset 1: Swiss Roll
     print("\n[1/4] Swiss Roll dataset...")
-    X_swiss, y_swiss = make_swiss_roll(n_samples=1500, noise=0.5, random_state=42)
-    embeddings = run_methods(X_swiss)
-    metrics = compute_metrics(X_swiss, embeddings)
+    X, y = make_swiss_roll(n_samples=1000, noise=0.5, random_state=42)
+    embeddings = run_methods(X)
+    metrics = compute_metrics(X, embeddings)
     all_metrics['Swiss Roll'] = metrics
-    plot_comparison(X_swiss, y_swiss, embeddings, metrics,
-                    'Swiss Roll (3D Manifold, n=1500)', 'swiss_roll_comparison.png')
+    plot_comparison(X, y, embeddings, metrics, 'Swiss Roll (3D Manifold)', 'swiss_roll_comparison.png')
 
-    # Dataset 2: S-Curve (manifold)
+    # Dataset 2: S-Curve
     print("[2/4] S-Curve dataset...")
-    X_scurve, y_scurve = make_s_curve(n_samples=1500, noise=0.1, random_state=42)
-    embeddings = run_methods(X_scurve)
-    metrics = compute_metrics(X_scurve, embeddings)
+    X, y = make_s_curve(n_samples=1000, noise=0.1, random_state=42)
+    embeddings = run_methods(X)
+    metrics = compute_metrics(X, embeddings)
     all_metrics['S-Curve'] = metrics
-    plot_comparison(X_scurve, y_scurve, embeddings, metrics,
-                    'S-Curve (3D Manifold, n=1500)', 's_curve_comparison.png')
+    plot_comparison(X, y, embeddings, metrics, 'S-Curve (3D Manifold)', 's_curve_comparison.png')
 
-    # Dataset 3: High-dim Blobs (clusters)
+    # Dataset 3: High-dim Blobs
     print("[3/4] High-dim Blobs dataset...")
-    X_blobs, y_blobs = make_blobs(n_samples=1500, n_features=50, centers=5,
-                                   cluster_std=2.0, random_state=42)
-    embeddings = run_methods(X_blobs)
-    metrics = compute_metrics(X_blobs, embeddings)
+    X, y = make_blobs(n_samples=1000, n_features=50, centers=5, cluster_std=2.0, random_state=42)
+    embeddings = run_methods(X)
+    metrics = compute_metrics(X, embeddings)
     all_metrics['Blobs 50D'] = metrics
-    plot_comparison(X_blobs, y_blobs, embeddings, metrics,
-                    'High-dim Blobs (50D, 5 clusters, n=1500)', 'blobs_comparison.png')
+    plot_comparison(X, y, embeddings, metrics, 'High-dim Blobs (50D, 5 clusters)', 'blobs_comparison.png')
 
-    # Dataset 4: Gaussian (no structure)
+    # Dataset 4: Gaussian
     print("[4/4] Gaussian dataset...")
-    X_gauss = np.random.randn(1000, 50)
-    y_gauss = np.zeros(1000)
-    embeddings = run_methods(X_gauss)
-    metrics = compute_metrics(X_gauss, embeddings)
+    X = np.random.randn(800, 50)
+    y = np.zeros(800)
+    embeddings = run_methods(X)
+    metrics = compute_metrics(X, embeddings)
     all_metrics['Gaussian 50D'] = metrics
-    plot_comparison(X_gauss, y_gauss, embeddings, metrics,
-                    'Single Gaussian (50D, n=1000)', 'gaussian_comparison.png')
+    plot_comparison(X, y, embeddings, metrics, 'Random Gaussian (50D)', 'gaussian_comparison.png')
 
     # Create summary table
     print("\nCreating summary table...")
     create_metrics_table(all_metrics)
 
     # Print summary
-    print("\n" + "="*70)
+    print("\n" + "="*80)
     print("BENCHMARK SUMMARY")
-    print("="*70)
-    print(f"{'Dataset':<15} {'Method':<8} {'kNN':>8} {'Spearman':>10} {'Distortion':>12}")
-    print("-"*70)
+    print("="*80)
+    print(f"{'Dataset':<15} {'Method':<8} {'kNN':>10} {'Spearman':>12} {'Distortion':>12}")
+    print("-"*80)
     for dataset, methods_metrics in all_metrics.items():
         for i, (method, m) in enumerate(methods_metrics.items()):
             ds_name = dataset if i == 0 else ''
-            print(f"{ds_name:<15} {method:<8} {m['kNN Recall']:>8.3f} {m['Spearman ρ']:>10.3f} {m['Distortion']:>12.1f}")
+            print(f"{ds_name:<15} {method:<8} {m['kNN Recall']:>10.3f} {m['Spearman ρ']:>12.3f} {m['Distortion']:>12.1f}")
         print()
 
     print("All figures saved successfully!")
