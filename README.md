@@ -7,6 +7,8 @@ An improved dimensionality reduction method that addresses UMAP's core failures:
 - Multi-phase optimization (global → local)
 - Uncertainty quantification
 
+Test on whatever genome dataset you'd like
+
 ## Installation
 
 ```bash
