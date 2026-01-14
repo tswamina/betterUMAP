@@ -1,3 +1,5 @@
+Check out: https://garden.tanushswaminathan.com/writings/science/A-Better-UMAP
+
 # betterUMAP
 
 HiDRA: **H**ierarchical **D**istance-**R**egularized **A**pproximation
